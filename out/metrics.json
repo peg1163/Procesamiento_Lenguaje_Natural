@@ -1,0 +1,9 @@
+{
+  "seed": 42,
+  "n_corpus": 8000,
+  "n_queries": 200,
+  "valid_queries_exact_match": 149,
+  "recall10_tfidf_exact": 0.9932885906040269,
+  "recall10_emb_exact": 0.9865771812080537,
+  "model_name": "paraphrase-multilingual-MiniLM-L12-v2"
+}
