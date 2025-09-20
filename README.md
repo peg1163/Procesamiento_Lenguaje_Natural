@@ -1,0 +1,2 @@
+# PC1_Proyecto7_Recuperacion_Embeddings
+practica calificada 1
