@@ -2,7 +2,6 @@ import argparse, random
 from pathlib import Path
 import torch
 import torch.optim as optim
-
 from .config import Config
 from .corpus import CharTokenizer, load_corpus, make_splits
 from .mini_transformer import MiniTransformer
@@ -51,7 +50,7 @@ metrics = {"train": {"step": [], "loss": []}}
 
 step = 0
 for ep in range(args.epochs):
-    for _ in range(200):  # mini-steps por época (rápido para la rúbrica)
+    for _ in range(200):  # mini-steps por época 
         x, y = batchify(tr)
         opt.zero_grad()
         logits = model(x)
@@ -67,4 +66,4 @@ for ep in range(args.epochs):
 
 save_json(metrics, Path(args.out) / "metrics.json")
 torch.save(model.state_dict(), Path(args.out) / "model.pt")
-print("OK train")
+print("Entrenamiento completado")

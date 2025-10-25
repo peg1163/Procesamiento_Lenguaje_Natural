@@ -1,0 +1,7 @@
+T,mode,peak_bytes
+64,full,3096
+64,cache,20612
+128,full,2992
+128,cache,25377
+256,full,2992
+256,cache,36176

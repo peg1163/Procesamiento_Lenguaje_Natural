@@ -26,14 +26,11 @@ class CausalSelfAttention(nn.Module):
         return self.mask
 
     def forward(self, x: torch.Tensor, use_cache: bool = False) -> torch.Tensor:
-        
         ## se le ingresa un  (B,T,C)
         ## y retorna  (B,T,C)
-        
         B, T, C = x.shape
         qkv = self.qkv(x).view(B, T, 3, self.n_heads, self.d_head).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]  # (B,H,T,d)
-
         if use_cache and self.kv_cache:
             # Concatena en el eje temporal (T)
             if self.cache_k is None:

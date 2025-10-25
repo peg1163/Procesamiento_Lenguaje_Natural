@@ -1,0 +1,3 @@
+T,model,accuracy
+64,RNN(GRU),0.4880
+64,Attention(1L),0.4720

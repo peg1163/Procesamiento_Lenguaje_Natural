@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 from .attn import CausalSelfAttention
 
+# Posicional sinusoidal (estática)
 class Sinusoidal(nn.Module):
-    """Posicional sinusoidal (estática)."""
     def __init__(self, d_model: int, max_len: int = 8192):
         super().__init__()
         pe = torch.zeros(max_len, d_model)
@@ -18,9 +18,8 @@ class Sinusoidal(nn.Module):
         # x: (B,T,C)
         pe = self.pe[start:start + x.size(1)].to(dtype=x.dtype, device=x.device)
         return x + pe.unsqueeze(0)
-
+#Rotary Position Embedding aplicado sobre el embedding de entrada 
 class RoPE(nn.Module):
-    """Rotary Position Embedding aplicado sobre el embedding de entrada (simple)."""
     def __init__(self, d_model: int):
         super().__init__()
         assert d_model % 2 == 0, "RoPE requiere dimensión par"
@@ -28,32 +27,20 @@ class RoPE(nn.Module):
         self.half = d_model // 2  # d/2
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        x: (B,T,C)  -> devuelve (B,T,C)
-        Construimos theta con forma exacta (B,T,d/2) para evitar ambigüedades de broadcasting.
-        """
         B, T, C = x.shape
         d2 = self.half
-        # Frecuencias: (d/2,)
         freqs = torch.exp(
             torch.arange(0, d2, device=x.device, dtype=x.dtype) * (-math.log(10000.0) / d2)
-        )  # (d/2,)
-
-        # Posiciones: (T,)
-        pos = torch.arange(T, device=x.device, dtype=x.dtype)  # (T,)
-        # Theta: (T, d/2) -> (1,T,d/2) -> (B,T,d/2)
+        ) 
+        pos = torch.arange(T, device=x.device, dtype=x.dtype)  
         theta = (pos[:, None] * freqs[None, :]).unsqueeze(0).expand(B, T, d2)
-
-        # Separar pares (B,T,d/2)
         x1 = x[..., 0::2]
         x2 = x[..., 1::2]
-
         cos_t = torch.cos(theta)
         sin_t = torch.sin(theta)
-
         xr1 = x1 * cos_t - x2 * sin_t
         xr2 = x1 * sin_t + x2 * cos_t
-        # Intercalar de nuevo a (B,T,C)
+
         x_rot = torch.empty_like(x)
         x_rot[..., 0::2] = xr1
         x_rot[..., 1::2] = xr2
@@ -84,7 +71,6 @@ class Block(nn.Module):
         return x
 
 class MiniTransformer(nn.Module):
-    """Decoder-only minimal: token embedding → 1 bloque → LN → cabeza vocab."""
     def __init__(self, vocab_size: int, d_model: int = 128, n_heads: int = 4, d_mlp: int = 256, pos: str = "rope"):
         super().__init__()
         self.tok_emb = nn.Embedding(vocab_size, d_model)

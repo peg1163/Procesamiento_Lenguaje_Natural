@@ -10,29 +10,26 @@ args = parser.parse_args()
 pkg = pathlib.Path(args.pkg)
 excl = set(x.strip() for x in args.exclude.split(',') if x.strip())
 
-# Archivos a medir
+
 files = [p for p in pkg.rglob('*.py') if p.name not in excl]
 
-# Configurar trace: solo conteo, sin imprimir trazas
+
 tr = Trace(count=True, trace=False, ignoremods=['torch','numpy','matplotlib'])
 
-# Helper para ejecutar un archivo bajo trace
 def _run_file(path_str: str):
     runpy.run_path(path_str, run_name="__main__")
 
-# Ejecutar cada test bajo trace
+
 for t in pathlib.Path('tests').rglob('test_*.py'):
     tr.runfunc(_run_file, str(t))
 
-# Resultados de trace
-counts = tr.results().counts  # dict[(filename, lineno) -> hits]
+counts = tr.results().counts 
 
 total = 0
 hit = 0
 for f in files:
     src_lines = f.read_text(encoding='utf-8').splitlines()
     for i, line in enumerate(src_lines, 1):
-        # ignorar líneas que son solo comentarios o vacías
         if not line.strip() or line.lstrip().startswith('#'):
             continue
         total += 1

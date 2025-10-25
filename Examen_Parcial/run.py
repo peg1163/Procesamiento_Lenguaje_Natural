@@ -1,18 +1,21 @@
 
-import argparse, os, sys, io, json, random, hashlib, tarfile, time, shutil, subprocess
+import argparse, os, sys, io, json, random, hashlib, tarfile, time, shutil
 from pathlib import Path
 import matplotlib.pyplot as plt
-import sys, subprocess, statistics as stats
+import subprocess, statistics as stats
 from trace import Trace
-import importlib.util, runpy, pathlib
-# ----- Defaults / rutas -----
+import importlib.util, runpy
+import  unittest
+import torch, tracemalloc, gc, csv
+from src.attn import CausalSelfAttention
+import numpy as np
+import pathlib
+from trace import Trace
 OUT = Path(os.getenv("OUT", "out"))
 DIST = Path(os.getenv("DIST", "dist"))
 SEED = int(os.getenv("SEED", "1337"))
 SALT = os.getenv("SALT", "CC02")
 SOURCE_DATE_EPOCH = int(os.getenv("SOURCE_DATE_EPOCH", str(int(time.time()))))
-
-# ============ UTILIDADES ============
 
 def info(msg): print(f"[+] {msg}")
 def warn(msg): print(f"[!] {msg}")
@@ -25,12 +28,10 @@ def sha256_bytes(b: bytes, salt: str = "") -> str:
     return hashlib.sha256(b + salt.encode("utf-8")).hexdigest()
 
 def py(cmd: list[str], check=True):
-    """Ejecuta un módulo Python como subproceso (para -m src.*)."""
+    
     full = [sys.executable] + cmd
     info(" ".join(full))
     return subprocess.run(full, check=check)
-
-# ============ DATASET: generar / verificar ============
 
 def gen_corpus(out: Path = OUT, seed: int = SEED, salt: str = SALT):
     ensure_dir(out)
@@ -41,12 +42,10 @@ def gen_corpus(out: Path = OUT, seed: int = SEED, salt: str = SALT):
     rnd = random.Random(seed)
     lines = []
 
-    # 1) Patrones con () y abc
     for _ in range(2000):
         k = rnd.randint(5, 40)
         lines.append("".join(rnd.choice("abc()") for _ in range(k)))
 
-    # 2) Sumas con acarreo: "A+B="
     for _ in range(2000):
         a = rnd.randint(0, 9999)
         b = rnd.randint(0, 9999)
@@ -66,8 +65,6 @@ def verify_corpus(out: Path = OUT, seed: int = SEED, salt: str = SALT):
     if not sumf.exists():
         fail("No existe out/CORPUS_SHA256.txt. Ejecuta primero: python run.py data")
     expected = sumf.read_text(encoding="utf-8").strip()
-
-    # Regeneramos temporalmente y comparamos
     tmp = out / "_tmp_verify"
     if tmp.exists(): shutil.rmtree(tmp)
     ensure_dir(tmp)
@@ -82,7 +79,6 @@ def verify_corpus(out: Path = OUT, seed: int = SEED, salt: str = SALT):
         warn(f"obtenido: {h2}")
         fail("NO COINCIDE")
 
-# ============ TRAIN / EVAL / BENCH / PLOT ============
 def step_train(args):
     ensure_dir(OUT)
     cmd = ["-m", "src.train", "--out", str(OUT),
@@ -103,36 +99,26 @@ def step_bench(_args):
     py(["-m", "src.bench", "--out", str(OUT)])
 
 def step_plot(_args):
-    # 1) Curva de pérdida (igual que antes)
-
+    
     m = json.loads((OUT / "metrics.json").read_text(encoding="utf-8"))
     plt.figure()
     plt.plot(m["train"]["step"], m["train"]["loss"])
     plt.xlabel("step"); plt.ylabel("loss"); plt.title("Train Loss")
     plt.savefig(OUT / "loss.png")
-    print(f"Plot guardado en {OUT/'loss.png'}")
-
-    # 2) MUY SIMPLE: correr bench y generar una gráfica de latencia
-    #    (T=128 y 256, 3 repeticiones cada uno), y guardar out/plot_latencia.png
+    print(f"[plot] guardado {OUT/'loss.png'}")
 
     def run_bench_once(T: int):
-        # Ejecuta: python -m src.bench --out out --T T
-        # src.bench imprime "full X cache Y" en stdout y escribe out/bench.txt
         p = subprocess.run([sys.executable, "-m", "src.bench", "--out", str(OUT), "--T", str(T)],
                            capture_output=True, text=True, check=True)
-        line = p.stdout.strip()
-        if not line or "full" not in line:
-            line = (OUT / "bench.txt").read_text(encoding="utf-8").strip()
-        # parseo rápido
+        line = p.stdout.strip() or (OUT / "bench.txt").read_text(encoding="utf-8").strip()
         toks = line.replace("full","").replace("cache","").split()
         full_s = float(toks[0]); cache_s = float(toks[1])
-        return full_s*1000.0, cache_s*1000.0  # a ms
+        return full_s*1000.0, cache_s*1000.0  # ms
 
     Ts = [128, 256]
     reps = 3
     means_full = []; sds_full = []
     means_cache = []; sds_cache = []
-
     for T in Ts:
         full_ms = []; cache_ms = []
         for _ in range(reps):
@@ -141,57 +127,121 @@ def step_plot(_args):
         means_full.append(stats.mean(full_ms));   sds_full.append(stats.pstdev(full_ms))
         means_cache.append(stats.mean(cache_ms)); sds_cache.append(stats.pstdev(cache_ms))
 
-    # gráfico bar chart muy simple
-    
-    x = range(len(Ts)); width = 0.35
     plt.figure(figsize=(6,4))
-    plt.bar([i - width/2 for i in x], means_full,  width, yerr=sds_full,  capsize=4, label="full")
-    plt.bar([i + width/2 for i in x], means_cache, width, yerr=sds_cache, capsize=4, label="cache")
-    plt.xticks(list(x), [str(t) for t in Ts])
-    plt.xlabel("Contexto T")
-    plt.ylabel("Latencia (ms)")
+
+    x = np.arange(len(Ts)); width = 0.35
+    plt.bar(x - width/2, means_full,  width, yerr=sds_full,  capsize=4, label="full")
+    plt.bar(x + width/2, means_cache, width, yerr=sds_cache, capsize=4, label="cache")
+    plt.xticks(x, [str(t) for t in Ts]); plt.xlabel("Contexto T"); plt.ylabel("Latencia (ms)")
     plt.title("Latencia: full (un forward) vs cache (autoregresivo)")
-    plt.legend()
-    plt.tight_layout()
+    plt.legend(); plt.tight_layout()
     plt.savefig(OUT / "plot_latencia.png")
-    print(f"Plot de latencia guardado en {OUT/'plot_latencia.png'}")
+    print(f"[plot] guardado {OUT/'plot_latencia.png'}")
 
 
-# ============ TESTS + COBERTURA (stdlib) ============
+    def peak_bytes_cpu(fn):
+        gc.collect()
+        tracemalloc.start()
+        fn()
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        return int(peak)
+
+    def peak_bytes_cuda(fn):
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.synchronize()
+        fn()
+        torch.cuda.synchronize()
+        return int(torch.cuda.max_memory_allocated())
+
+    use_cuda = torch.cuda.is_available()
+    peak_fn = peak_bytes_cuda if use_cuda else peak_bytes_cpu
+
+    def mem_full_once(T: int, D=128, H=4):
+        attn = CausalSelfAttention(D, H, kv_cache=False).eval()
+        x = torch.randn(1, T, D, device=("cuda" if use_cuda else "cpu"))
+        with torch.no_grad():
+            def _f(): attn(x)
+            return peak_fn(_f)
+
+    def mem_cache_once(T: int, D=128, H=4):
+        attn = CausalSelfAttention(D, H, kv_cache=True).eval()
+        x = torch.randn(1, T, D, device=("cuda" if use_cuda else "cpu"))
+        with torch.no_grad():
+            def _f():
+                y = []
+                for t in range(T):
+                    y.append(attn(x[:, t:t+1, :], use_cache=True))
+            return peak_fn(_f)
+
+    Ts_mem = [64, 128, 256]
+    mem_rows = [("T","mode","peak_bytes")]
+    mem_full = []; mem_cache = []
+    for T in Ts_mem:
+        b_full = mem_full_once(T)
+        b_cache = mem_cache_once(T)
+        mem_rows.append((T,"full", b_full))
+        mem_rows.append((T,"cache",b_cache))
+        mem_full.append(b_full/1e6)
+        mem_cache.append(b_cache/1e6)
+
+    with open(OUT/"mem.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f); w.writerows(mem_rows)
+    print(f"[plot] guardado {OUT/'mem.csv'}")
+
+    plt.figure(figsize=(6,4))
+    plt.plot(Ts_mem, mem_full, marker="o", label="full")
+    plt.plot(Ts_mem, mem_cache, marker="o", label="cache")
+    plt.xlabel("Contexto T"); plt.ylabel("Memoria pico (MB)")
+    plt.title("Memoria pico vs contexto (aprox.)")
+    plt.legend(); plt.tight_layout()
+    plt.savefig(OUT / "plot_memoria.png")
+    print(f"[plot] guardado {OUT/'plot_memoria.png'}")
+
+
 def step_test(_args):
-    # Ejecuta unittest discover y luego una cobertura aproximada con trace
-    info("Ejecutando tests…")
-    res = py(["-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"], check=False)
-    if res.returncode != 0:
-        fail("Tests fallaron")
+    
+    PKG = pathlib.Path("src")
+    EXCLUDE = set()  
+    files = [p for p in PKG.rglob("*.py") if p.name not in EXCLUDE]
 
-    # Cobertura aproximada
+    def run_unittests():
+        suite = unittest.defaultTestLoader.discover("tests", pattern="test_*.py")
+        runner = unittest.TextTestRunner(verbosity=2)
+        result = runner.run(suite)
+        if not result.wasSuccessful():
+            raise SystemExit(1)
 
-
-    pkg = Path("src")
-    exclude = {"mini_transformer.py", "train.py", "bench.py", "eval.py"}  # exentos (numéricos)
-    files = [p for p in pkg.rglob("*.py") if p.name not in exclude]
-
+    
     tr = Trace(count=True, trace=False, ignoremods=["torch", "numpy", "matplotlib"])
-    for t in Path("tests").rglob("test_*.py"):
-        runpy.run_path(str(t))
+    tr.runfunc(run_unittests)
 
-    counts = tr.results().counts
-    total = 0; hit = 0
+    
+    counts = tr.results().counts  # dict[(filename, lineno) -> hits]
+    counted = {(os.path.abspath(f), ln) for (f, ln) in counts.keys()}
+
+    total = 0
+    hit = 0
     for f in files:
-        src = f.read_text(encoding="utf-8").splitlines()
-        for i, line in enumerate(src, 1):
-            if line.strip().startswith("#"): 
-                continue
-            total += 1
-            if (str(f), i) in counts:
-                hit += 1
-    ratio = (hit / total) if total else 1.0
-    info(f"Coverage (aprox): {ratio:.2%}")
-    if ratio < 0.70:
-        fail("Cobertura por debajo de 70%")
+        abspath = os.path.abspath(str(f))
+        with open(f, "r", encoding="utf-8") as fh:
+            for i, line in enumerate(fh, 1):
+                s = line.strip()
+                if not s or s.startswith("#"):
+                    continue
+                total += 1
+                if (abspath, i) in counted:
+                    hit += 1
 
-# ============ PACK reproducible ============
+    ratio = (hit / total) if total else 1.0
+    print("\nOK")
+    print(f"[+] Coverage (aprox): {ratio:.2%}")
+    if ratio + 1e-9 < 0.70:
+        print("[x] Cobertura por debajo de 70%")
+        sys.exit(1)
+
+
+
 def step_pack(_args):
     ensure_dir(OUT); ensure_dir(DIST)
     tar_path = DIST / "proyecto-cc02.tar.gz"
@@ -213,14 +263,14 @@ def step_pack(_args):
                 files.append(p)
     files = sorted(files, key=lambda x: str(x).replace("\\", "/"))
 
-    # Empaquetado determinista
+    
     info(f"Empaquetando {len(files)} archivos → {tar_path}")
     with tarfile.open(tar_path, "w:gz", format=tarfile.GNU_FORMAT) as tar:
         for p in files:
             ti = tarfile.TarInfo(str(p).replace("\\", "/"))
             st = p.stat()
             ti.size = st.st_size
-            ti.mtime = SOURCE_DATE_EPOCH  # fijamos mtime
+            ti.mtime = SOURCE_DATE_EPOCH  
             ti.uid = 0; ti.gid = 0; ti.uname = ""; ti.gname = ""
             ti.mode = 0o644
             with open(p, "rb") as f:
@@ -229,7 +279,7 @@ def step_pack(_args):
     (OUT / "PACKAGE_SHA256.txt").write_text(h + "\n", encoding="utf-8", newline="\n")
     info(f"SHA256 paquete: {h[:12]}…")
 
-# ============ ALL ============
+
 def step_all(args):
     gen_corpus(OUT, SEED, SALT)
     verify_corpus(OUT, SEED, SALT)
@@ -241,16 +291,13 @@ def step_all(args):
     step_pack(args)
     info("Pipeline COMPLETO")
 
-# ============ CLI ============
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    # data
     sub.add_parser("data", help="Genera el corpus (SEED+SALT)")
     sub.add_parser("verify-corpus", help="Regenera el corpus y compara SHA")
-
-    # train/eval/bench/plot/test/pack/all
     ptrain = sub.add_parser("train", help="Entrena Mini-Transformer")
     ptrain.add_argument("--epochs", type=int, default=1)
     ptrain.add_argument("--lr", type=float, default=3e-4)
