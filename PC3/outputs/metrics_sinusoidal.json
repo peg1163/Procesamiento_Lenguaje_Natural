@@ -1,0 +1,11 @@
+{
+  "posenc_type": "sinusoidal",
+  "num_steps": 1000,
+  "eval_every": 100,
+  "final_train_loss": 2.1320459842681885,
+  "val_loss": 2.178951723435346,
+  "val_ppl": 8.837037742019287,
+  "checkpoint": "checkpoints/best_sinusoidal.pt",
+  "train_curve": "outputs/train_curve_sinusoidal.csv",
+  "val_curve": "outputs/val_curve_sinusoidal.csv"
+}

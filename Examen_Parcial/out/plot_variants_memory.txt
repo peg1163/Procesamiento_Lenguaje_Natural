@@ -1,0 +1,1 @@
+Memoria pico solo disponible en GPU (CUDA).

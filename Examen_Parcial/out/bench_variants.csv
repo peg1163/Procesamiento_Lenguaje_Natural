@@ -1,0 +1,9 @@
+variant,T,mean_ms,std_ms,peak_bytes,device
+sdpa,64,0.3285,0.0117,,cpu
+mlp,64,0.2025,0.0183,,cpu
+sdpa,128,0.8138,0.0136,,cpu
+mlp,128,0.3507,0.0060,,cpu
+sdpa,256,2.4483,0.1895,,cpu
+mlp,256,0.6002,0.0289,,cpu
+sdpa,384,5.2968,0.2696,,cpu
+mlp,384,0.8731,0.0317,,cpu
