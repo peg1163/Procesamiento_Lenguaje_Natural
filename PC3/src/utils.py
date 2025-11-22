@@ -108,7 +108,7 @@ def load_json(path: str) -> Any:
 
 
 def safe_exp(x: float) -> float:
-    """Exp con clamp para evitar overflow al calcular PPL."""
+    
     try:
         return float(math.exp(min(x, 50)))
     except OverflowError:

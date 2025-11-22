@@ -28,7 +28,7 @@ class SinusoidalPositionalEncoding(nn.Module):
         return x + pos_emb
 
 
-# ========= RoPE ========= #
+#  RoPE 
 
 def apply_rope(
     q: torch.Tensor,
@@ -65,7 +65,7 @@ def apply_rope(
     return _rotate(q), _rotate(k)
 
 
-# ========= ALiBi ========= #
+# ALiBi
 
 def _get_alibi_slopes(n_heads: int) -> list[float]:
 
@@ -91,13 +91,6 @@ def build_alibi_bias(
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
-    """
-    Construye el bias ALiBi:
-
-    return: [n_heads, max_len, max_len], donde para cada cabeza h:
-        bias[h, i, j] = slope_h * (i - j)
-    Es monótono en j para j < i (lo que usamos en el test).
-    """
     device = device or torch.device("cpu")
     slopes = torch.tensor(_get_alibi_slopes(n_heads), device=device, dtype=dtype)
     slopes = slopes.view(n_heads, 1, 1)  # [H,1,1]
