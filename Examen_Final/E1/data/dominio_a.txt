@@ -1,0 +1,5 @@
+La inteligencia artificial ha avanzado rápidamente en la última década, permitiendo aplicaciones en diversos campos.
+Los modelos de lenguaje de gran tamaño pueden generar texto coherente y útil en múltiples idiomas.
+En los últimos años, las universidades han comenzado a integrar cursos de ciencia de datos en sus programas.
+Los avances en procesamiento de lenguaje natural han mejorado herramientas como traductores, chatbots y asistentes virtuales.
+El aprendizaje profundo ha transformado tareas como el reconocimiento de imágenes, el audio y el análisis de texto.
